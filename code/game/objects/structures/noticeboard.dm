@@ -11,21 +11,7 @@
 	/// Current number of a pinned notices
 	var/notices = 0
 
-/obj/structure/noticeboard/directional/north
-	dir = SOUTH
-	pixel_y = 32
-
-/obj/structure/noticeboard/directional/south
-	dir = NORTH
-	pixel_y = -32
-
-/obj/structure/noticeboard/directional/east
-	dir = WEST
-	pixel_x = 32
-
-/obj/structure/noticeboard/directional/west
-	dir = EAST
-	pixel_x = -32
+MAPPING_DIRECTIONAL_HELPERS(/obj/structure/noticeboard, 32)
 
 /obj/structure/noticeboard/Initialize(mapload)
 	. = ..()
@@ -120,10 +106,24 @@
 
 /obj/structure/noticeboard/deconstruct(disassembled = TRUE)
 	if(!(flags_1 & NODECONSTRUCT_1))
-		new /obj/item/stack/sheet/iron (loc, 1)
+		if(!disassembled)
+			new /obj/item/stack/sheet/mineral/wood(loc)
+		else
+			new /obj/item/wallframe/noticeboard(loc)
 	for(var/obj/item/content in contents)
 		remove_item(content)
 	qdel(src)
+
+/obj/item/wallframe/noticeboard
+	name = "notice board"
+	desc = "Right now it's more of a clipboard. Attach to a wall to use."
+	icon = 'icons/obj/stationobjs.dmi'
+	icon_state = "nboard00"
+	custom_materials = list(
+		/datum/material/wood = MINERAL_MATERIAL_AMOUNT,
+	)
+	result_path = /obj/structure/noticeboard
+	pixel_shift = 32
 
 // Notice boards for the heads of staff (plus the qm)
 
@@ -165,6 +165,6 @@
 /obj/structure/noticeboard/staff
 	name = "Staff Notice Board"
 	desc = "Important notices from the heads of staff."
-	req_access = list(ACCESS_HEADS)
+	req_access = list(ACCESS_COMMAND)
 
 #undef MAX_NOTICES

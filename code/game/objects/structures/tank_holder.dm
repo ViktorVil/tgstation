@@ -2,7 +2,7 @@
 /obj/structure/tank_holder
 	name = "tank holder"
 	desc = "A metallic frame that can hold tanks and extinguishers."
-	icon = 'icons/obj/tank.dmi'
+	icon = 'icons/obj/atmospherics/tank.dmi'
 	icon_state = "holder"
 
 	custom_materials = list(/datum/material/iron = 2000)
@@ -17,7 +17,7 @@
 	/// The stored tank. If this is a path, it gets created into contents at Initialize.
 	var/obj/item/tank
 
-/obj/structure/tank_holder/Initialize()
+/obj/structure/tank_holder/Initialize(mapload)
 	. = ..()
 	if(tank)
 		var/obj/item/tank_ = new tank(null)

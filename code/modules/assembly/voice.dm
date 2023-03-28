@@ -13,7 +13,8 @@
 	verb_ask = "beeps"
 	verb_exclaim = "beeps"
 	var/listening = FALSE
-	var/recorded = "" //the activation message
+	/// The activation message is tracked using this var.
+	var/recorded = ""
 	var/mode = INCLUSIVE_MODE
 	var/static/list/modes = list(
 		"inclusive",
@@ -22,9 +23,9 @@
 		"voice sensor",
 	)
 	drop_sound = 'sound/items/handling/component_drop.ogg'
-	pickup_sound =  'sound/items/handling/component_pickup.ogg'
+	pickup_sound = 'sound/items/handling/component_pickup.ogg'
 
-/obj/item/assembly/voice/Initialize()
+/obj/item/assembly/voice/Initialize(mapload)
 	. = ..()
 	become_hearing_sensitive(ROUNDSTART_TRAIT)
 
@@ -32,7 +33,7 @@
 	. = ..()
 	. += span_notice("Use a multitool to swap between \"inclusive\", \"exclusive\", \"recognizer\", and \"voice sensor\" mode.")
 
-/obj/item/assembly/voice/Hear(message, atom/movable/speaker, message_language, raw_message, radio_freq, list/spans, list/message_mods = list())
+/obj/item/assembly/voice/Hear(message, atom/movable/speaker, message_language, raw_message, radio_freq, list/spans, list/message_mods = list(), message_range)
 	. = ..()
 	if(message_mods[WHISPER_MODE]) //Too quiet lad
 		return
@@ -54,15 +55,15 @@
 		if(INCLUSIVE_MODE)
 			recorded = raw_message
 			listening = FALSE
-			say("Activation message is '[recorded]'.", message_language)
+			say("Activation message is '[recorded]'.", sanitize = FALSE, language = message_language)
 		if(EXCLUSIVE_MODE)
 			recorded = raw_message
 			listening = FALSE
-			say("Activation message is '[recorded]'.", message_language)
+			say("Activation message is '[recorded]'.", sanitize = FALSE, language = message_language)
 		if(RECOGNIZER_MODE)
 			recorded = speaker.GetVoice()
 			listening = FALSE
-			say("Your voice pattern is saved.", message_language)
+			say("Your voice pattern is saved.", language = message_language)
 		if(VOICE_SENSOR_MODE)
 			if(length(raw_message))
 				send_pulse()
@@ -90,7 +91,7 @@
 /obj/item/assembly/voice/proc/send_pulse()
 	visible_message("clicks", visible_message_flags = EMOTE_MESSAGE)
 	playsound(src, 'sound/effects/whirthunk.ogg', 30)
-	addtimer(CALLBACK(src, .proc/pulse), 2 SECONDS)
+	addtimer(CALLBACK(src, PROC_REF(pulse)), 2 SECONDS)
 
 /obj/item/assembly/voice/multitool_act(mob/living/user, obj/item/I)
 	..()

@@ -16,10 +16,12 @@
 	. = ..()
 	update_appearance()
 	AddElement(/datum/element/ridable, /datum/component/riding/vehicle/janicart)
+	GLOB.janitor_devices += src
 	if (installed_upgrade)
 		installed_upgrade.install(src)
 
 /obj/vehicle/ridden/janicart/Destroy()
+	GLOB.janitor_devices -= src
 	if (trash_bag)
 		QDEL_NULL(trash_bag)
 	if (installed_upgrade)
@@ -40,7 +42,7 @@
 			return
 		to_chat(user, span_notice("You hook the trashbag onto [src]."))
 		trash_bag = I
-		RegisterSignal(trash_bag, COMSIG_PARENT_QDELETING, .proc/bag_deleted)
+		RegisterSignal(trash_bag, COMSIG_PARENT_QDELETING, PROC_REF(bag_deleted))
 		SEND_SIGNAL(src, COMSIG_VACUUM_BAG_ATTACH, I)
 		update_appearance()
 	else if(istype(I, /obj/item/janicart_upgrade))
@@ -86,7 +88,7 @@
  */
 /obj/vehicle/ridden/janicart/proc/bag_deleted(datum/source)
 	SIGNAL_HANDLER
-	INVOKE_ASYNC(src, .proc/try_remove_bag)
+	INVOKE_ASYNC(src, PROC_REF(try_remove_bag))
 
 /**
  * Attempts to remove the attached trash bag, returns true if bag was removed
@@ -121,6 +123,7 @@
 /obj/item/janicart_upgrade
 	name = "base upgrade"
 	desc = "An abstract upgrade for mobile janicarts."
+	icon = 'icons/obj/janicart_upgrade.dmi'
 	icon_state = "janicart_upgrade"
 	greyscale_config = /datum/greyscale_config/janicart_upgrade
 	/// The greyscale config for the on-cart installed upgrade overlay
@@ -150,10 +153,10 @@
 	greyscale_colors = "#ffffff#6aa3ff#a2a2a2#d1d15f"
 
 /obj/item/janicart_upgrade/buffer/install(obj/vehicle/ridden/janicart/installee)
-	installee._AddElement(list(/datum/element/cleaning))
+	installee.AddElement(/datum/element/cleaning)
 
 /obj/item/janicart_upgrade/buffer/uninstall(obj/vehicle/ridden/janicart/installee)
-	installee._RemoveElement(list(/datum/element/cleaning))
+	installee.RemoveElement(/datum/element/cleaning)
 
 /obj/item/janicart_upgrade/vacuum
 	name = "vacuum upgrade"
@@ -161,7 +164,7 @@
 	greyscale_colors = "#ffffff#ffea6a#a2a2a2#d1d15f"
 
 /obj/item/janicart_upgrade/vacuum/install(obj/vehicle/ridden/janicart/installee)
-	installee._AddComponent(list(/datum/component/vacuum, installee.trash_bag))
+	installee.AddComponent(/datum/component/vacuum, installee.trash_bag)
 
 /obj/item/janicart_upgrade/vacuum/uninstall(obj/vehicle/ridden/janicart/installee)
 	qdel(installee.GetComponent(/datum/component/vacuum))

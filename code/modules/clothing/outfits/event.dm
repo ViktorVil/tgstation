@@ -8,7 +8,7 @@
 		/obj/item/a_gift/anything = 5,
 )
 	gloves = /obj/item/clothing/gloves/color/red
-	head = /obj/item/clothing/head/santa
+	head = /obj/item/clothing/head/helmet/space/santahat/beardless
 	shoes = /obj/item/clothing/shoes/sneakers/red
 	r_pocket = /obj/item/flashlight
 
@@ -23,6 +23,6 @@
 
 	H.hairstyle = "Long Hair 3"
 	H.facial_hairstyle = "Beard (Full)"
-	H.hair_color = "FFF"
-	H.facial_hair_color = "FFF"
-	H.update_hair()
+	H.hair_color = "#FFFFFF"
+	H.facial_hair_color = "#FFFFFF"
+	H.update_body_parts()

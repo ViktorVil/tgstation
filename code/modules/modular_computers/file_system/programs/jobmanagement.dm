@@ -6,25 +6,27 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 	filedesc = "Plexagon HR Core"
 	category = PROGRAM_CATEGORY_CREW
 	program_icon_state = "id"
-	extended_desc = "Program for viewing and changing job slot avalibility."
-	transfer_access = ACCESS_HEADS
+	extended_desc = "Program for viewing and changing job slot availability."
+	transfer_access = list(ACCESS_COMMAND)
 	requires_ntnet = TRUE
 	size = 4
 	tgui_id = "NtosJobManager"
 	program_icon = "address-book"
 
 	var/change_position_cooldown = 30
-	//Jobs you cannot open new positions for
+	///Jobs blacklisted from having their slots edited.
 	var/list/blacklisted = list(
-		"AI",
-		"Assistant",
-		"Cyborg",
-		"Captain",
-		"Head of Personnel",
-		"Head of Security",
-		"Chief Engineer",
-		"Research Director",
-		"Chief Medical Officer")
+		JOB_CAPTAIN,
+		JOB_HEAD_OF_PERSONNEL,
+		JOB_HEAD_OF_SECURITY,
+		JOB_RESEARCH_DIRECTOR,
+		JOB_CHIEF_ENGINEER,
+		JOB_CHIEF_MEDICAL_OFFICER,
+		JOB_QUARTERMASTER,
+		JOB_AI,
+		JOB_CYBORG,
+		JOB_ASSISTANT,
+	)
 
 	//The scaling factor of max total positions in relation to the total amount of people on board the station in %
 	var/max_relative_positions = 30 //30%: Seems reasonable, limit of 6 @ 20 players
@@ -69,9 +71,7 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 	if(.)
 		return
 
-	var/obj/item/computer_hardware/card_slot/card_slot = computer.all_components[MC_CARD]
-	var/obj/item/card/id/user_id = card_slot?.stored_card
-
+	var/obj/item/card/id/user_id = computer.computer_id_slot
 	if(!user_id || !(ACCESS_CHANGE_IDS in user_id.access))
 		return
 
@@ -85,7 +85,7 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 				GLOB.time_last_changed_position = world.time / 10
 			j.total_positions++
 			opened_positions[edit_job_target]++
-			log_game("[key_name(usr)] opened a [j.title] job position, for a total of [j.total_positions] open job slots.")
+			log_job_debug("[key_name(usr)] opened a [j.title] job position, for a total of [j.total_positions] open job slots.")
 			playsound(computer, 'sound/machines/terminal_prompt_confirm.ogg', 50, FALSE)
 			return TRUE
 		if("PRG_close_job")
@@ -98,12 +98,10 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 				GLOB.time_last_changed_position = world.time / 10
 			j.total_positions--
 			opened_positions[edit_job_target]--
-			log_game("[key_name(usr)] closed a [j.title] job position, leaving [j.total_positions] open job slots.")
+			log_job_debug("[key_name(usr)] closed a [j.title] job position, leaving [j.total_positions] open job slots.")
 			playsound(computer, 'sound/machines/terminal_prompt_confirm.ogg', 50, FALSE)
 			return TRUE
 		if("PRG_priority")
-			if(length(SSjob.prioritized_jobs) >= 5)
-				return
 			var/priority_target = params["target"]
 			var/datum/job/j = SSjob.GetJob(priority_target)
 			if(!j || !can_edit_job(j))
@@ -113,7 +111,10 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 			if(j in SSjob.prioritized_jobs)
 				SSjob.prioritized_jobs -= j
 			else
-				SSjob.prioritized_jobs += j
+				if(length(SSjob.prioritized_jobs) < 5)
+					SSjob.prioritized_jobs += j
+				else
+					computer.say("Error: CentCom employment protocols restrict prioritising more than 5 jobs.")
 			playsound(computer, 'sound/machines/terminal_prompt_confirm.ogg', 50, FALSE)
 			return TRUE
 
@@ -122,18 +123,19 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 	var/list/data = get_header_data()
 
 	var/authed = FALSE
-	var/obj/item/computer_hardware/card_slot/card_slot = computer.all_components[MC_CARD]
-	var/obj/item/card/id/user_id = card_slot?.stored_card
+	var/obj/item/card/id/user_id = computer.computer_id_slot
 	if(user_id && (ACCESS_CHANGE_IDS in user_id.access))
 		authed = TRUE
 
 	data["authed"] = authed
 
 	var/list/pos = list()
-	for(var/j in SSjob.joinable_occupations)
-		var/datum/job/job = j
+	var/list/priority = list()
+	for(var/datum/job/job as anything in SSjob.joinable_occupations)
 		if(job.title in blacklisted)
 			continue
+		if(job in SSjob.prioritized_jobs)
+			priority += job.title
 
 		pos += list(list(
 			"title" = job.title,
@@ -143,12 +145,8 @@ GLOBAL_VAR_INIT(time_last_changed_position, 0)
 			"status_close" = authed ? can_close_job(job) : FALSE,
 		))
 	data["slots"] = pos
+	data["prioritized"] = priority
 	var/delta = round(change_position_cooldown - ((world.time / 10) - GLOB.time_last_changed_position), 1)
 	data["cooldown"] = delta < 0 ? 0 : delta
-	var/list/priority = list()
-	for(var/j in SSjob.prioritized_jobs)
-		var/datum/job/job = j
-		priority += job.title
-	data["prioritized"] = priority
 	return data
 

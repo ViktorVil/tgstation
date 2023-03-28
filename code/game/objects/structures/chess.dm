@@ -4,15 +4,19 @@
 	icon = 'icons/obj/chess.dmi'
 	icon_state = "white_pawn"
 	name = "\improper Probably a White Pawn"
-	desc = "This is weird. Please inform adminstration on how you managed to get the parent chess piece. Thanks!"
+	desc = "This is weird. Please inform administration on how you managed to get the parent chess piece. Thanks!"
 	max_integrity = 100
 
 /obj/structure/chess/wrench_act(mob/user, obj/item/tool)
+	if(flags_1 & HOLOGRAM_1)
+		balloon_alert(user, "it goes right through!")
+		return TRUE
 	to_chat(user, span_notice("You start to take apart the chess piece."))
 	if(!do_after(user, 0.5 SECONDS, target = src))
 		return TRUE
 	var/obj/item/stack/sheet/iron/metal_sheets = new (drop_location(), 2)
-	metal_sheets.add_fingerprint(user)
+	if (!QDELETED(metal_sheets))
+		metal_sheets.add_fingerprint(user)
 	tool.play_tool_sound(src)
 	qdel(src)
 	return TRUE
@@ -76,3 +80,28 @@
 	name = "\improper Black King"
 	desc = "A black king chess piece. It can move one tile in any direction."
 	icon_state = "black_king"
+
+/obj/structure/chess/checker
+	icon_state = "white_checker_man"
+	name = "\improper Probably a White Checker"
+	desc = "This is weird. Please inform administration on how you managed to get the parent checker piece. Thanks!"
+
+/obj/structure/chess/checker/whiteman
+	name = "\improper White Checker Man"
+	desc = "A white checker piece. Looks suspiciously like a flattened chess pawn."
+	icon_state = "white_checker_man"
+
+/obj/structure/chess/checker/whiteking
+	name = "\improper White Checker Man"
+	desc = "A white checker piece. It's stacked!"
+	icon_state = "white_checker_king"
+
+/obj/structure/chess/checker/blackman
+	name = "\improper Black Checker Man"
+	desc = "A black checker piece. Looks suspiciously like a flattened chess pawn."
+	icon_state = "black_checker_man"
+
+/obj/structure/chess/checker/blackking
+	name = "\improper Black Checker King"
+	desc = "A black checker piece. It's stacked!"
+	icon_state = "black_checker_king"

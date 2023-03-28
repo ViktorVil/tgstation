@@ -6,7 +6,6 @@
 #define FLAG_RETURN_TIME 200 // 20 seconds
 #define INSTAGIB_RESPAWN 50 //5 seconds
 #define DEFAULT_RESPAWN 150 //15 seconds
-#define CTF_REQUIRED_PLAYERS 4
 
 /obj/item/ctf
 	name = "banner"
@@ -30,18 +29,18 @@
 	var/obj/effect/ctf/flag_reset/reset
 	var/reset_path = /obj/effect/ctf/flag_reset
 	/// Which area we announce updates on the flag to. Should just generally be the area of the arena.
-	var/game_area = /area/ctf
+	var/game_area = /area/centcom/ctf
 
 /obj/item/ctf/Destroy()
 	QDEL_NULL(reset)
 	return ..()
 
-/obj/item/ctf/Initialize()
+/obj/item/ctf/Initialize(mapload)
 	. = ..()
 	if(!reset)
 		reset = new reset_path(get_turf(src))
 		reset.flag = src
-	RegisterSignal(src, COMSIG_PARENT_PREQDELETED, .proc/reset_flag) //just in case CTF has some map hazards (read: chasms).
+	RegisterSignal(src, COMSIG_PARENT_PREQDELETED, PROC_REF(reset_flag)) //just in case CTF has some map hazards (read: chasms).
 
 /obj/item/ctf/process()
 	if(is_ctf_target(loc)) //pickup code calls temporary drops to test things out, we need to make sure the flag doesn't reset from
@@ -51,6 +50,7 @@
 
 /obj/item/ctf/proc/reset_flag(capture = FALSE)
 	SIGNAL_HANDLER
+	STOP_PROCESSING(SSobj, src)
 
 	var/turf/our_turf = get_turf(src.reset)
 	if(!our_turf)
@@ -61,7 +61,6 @@
 		if(istype(mob_area, game_area))
 			if(!capture)
 				to_chat(M, span_userdanger("[src] has been returned to the base!"))
-	STOP_PROCESSING(SSobj, src)
 	return TRUE //so if called by a signal, it doesn't delete
 
 //working with attack hand feels like taking my brain and putting it through an industrial pill press so i'm gonna be a bit liberal with the comments
@@ -139,7 +138,7 @@
 
 /obj/effect/ctf/flag_reset
 	name = "banner landmark"
-	icon = 'icons/obj/items_and_weapons.dmi'
+	icon = 'icons/obj/banner.dmi'
 	icon_state = "banner"
 	desc = "This is where a banner with Nanotrasen's logo on it would go."
 	layer = LOW_ITEM_LAYER
@@ -175,10 +174,47 @@
 	desc = "This is where a yellow banner used to play capture the flag \
 		would go."
 
-/proc/toggle_id_ctf(user, activated_id, automated = FALSE)
+#define CTF_LOADING_UNLOADED 0
+#define CTF_LOADING_LOADING 1
+#define CTF_LOADING_LOADED 2
+
+/proc/toggle_id_ctf(user, activated_id, automated = FALSE, unload = FALSE)
+	var/static/loading = CTF_LOADING_UNLOADED
+	if(unload == TRUE)
+		log_admin("[key_name_admin(user)] is attempting to unload CTF.")
+		message_admins("[key_name_admin(user)] is attempting to unload CTF.")
+		if(loading == CTF_LOADING_UNLOADED)
+			to_chat(user, span_warning("CTF cannot be unloaded if it was not loaded in the first place"))
+			return
+		to_chat(user, span_warning("CTF is being unloaded"))
+		for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
+			CTF.unload()
+		log_admin("[key_name_admin(user)] has unloaded CTF.")
+		message_admins("[key_name_admin(user)] has unloaded CTF.")
+		loading = CTF_LOADING_UNLOADED
+		return
+	switch (loading)
+		if (CTF_LOADING_UNLOADED)
+			if (isnull(GLOB.ctf_spawner))
+				to_chat(user, span_boldwarning("Couldn't find a CTF spawner. Call a maintainer!"))
+				return
+
+			to_chat(user, span_notice("Loading CTF..."))
+
+			loading = CTF_LOADING_LOADING
+			if(!GLOB.ctf_spawner.load_map(user))
+				to_chat(user, span_warning("CTF loading was cancelled"))
+				loading = CTF_LOADING_UNLOADED
+				return
+			loading = CTF_LOADING_LOADED
+		if (CTF_LOADING_LOADING)
+			to_chat(user, span_warning("CTF is loading!"))
+
+			return
+
 	var/ctf_enabled = FALSE
 	var/area/A
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(activated_id != CTF.game_id)
 			continue
 		ctf_enabled = CTF.toggle_ctf()
@@ -195,13 +231,17 @@
 	if(!automated)
 		notify_ghosts("CTF has been [ctf_enabled? "enabled" : "disabled"] in [A]!",'sound/effects/ghost2.ogg')
 
+#undef CTF_LOADING_UNLOADED
+#undef CTF_LOADING_LOADING
+#undef CTF_LOADING_LOADED
+
 /obj/machinery/capture_the_flag
 	name = "CTF Controller"
 	desc = "Used for running friendly games of capture the flag."
 	icon = 'icons/obj/device.dmi'
 	icon_state = "syndbeacon"
 	resistance_flags = INDESTRUCTIBLE
-	var/game_id = "centcom"
+	var/game_id = CTF_GHOST_CTF_GAME_ID
 
 	var/victory_rejoin_text = "<span class='userdanger'>Teams have been cleared. Click on the machines to vote to begin another round.</span>"
 	var/team = WHITE_TEAM
@@ -220,7 +260,8 @@
 	var/ctf_enabled = FALSE
 	///assoc list for classes. If there's only one, it'll just equip. Otherwise, it lets you pick which outfit!
 	var/list/ctf_gear = list("Rifleman" = /datum/outfit/ctf, "Assaulter" = /datum/outfit/ctf/assault, "Marksman" = /datum/outfit/ctf/marksman)
-	var/instagib_gear = /datum/outfit/ctf/instagib
+	var/list/instagib_gear = list("Instagib" = /datum/outfit/ctf/instagib)
+	var/list/default_gear
 	var/ammo_type = /obj/effect/powerup/ammo/ctf
 	// Fast paced gameplay, no real time for burn infections.
 	var/player_traits = list(TRAIT_NEVER_WOUNDED)
@@ -228,12 +269,22 @@
 	var/list/dead_barricades = list()
 
 	var/static/arena_reset = FALSE
-	var/static/list/people_who_want_to_play = list()
-	var/game_area = /area/ctf
+	var/game_area = /area/centcom/ctf
 
-/obj/machinery/capture_the_flag/Initialize()
+	/// This variable is needed because of ctf shitcode + we need to make sure we're deleting the current ctf landmark that spawned us in and not a new one.
+	var/obj/effect/landmark/ctf/ctf_landmark
+
+/obj/machinery/capture_the_flag/Initialize(mapload)
 	. = ..()
-	AddElement(/datum/element/point_of_interest)
+	GLOB.ctf_panel.ctf_machines += src
+	SSpoints_of_interest.make_point_of_interest(src)
+	default_gear = ctf_gear
+	ctf_landmark = GLOB.ctf_spawner
+
+/obj/machinery/capture_the_flag/Destroy()
+	ctf_landmark = null
+	GLOB.ctf_panel.ctf_machines -= src
+	return ..()
 
 /obj/machinery/capture_the_flag/process(delta_time)
 	for(var/i in spawned_mobs)
@@ -256,7 +307,7 @@
 	team = RED_TEAM
 	team_span = "redteamradio"
 	ctf_gear = list("Rifleman" = /datum/outfit/ctf/red, "Assaulter" = /datum/outfit/ctf/assault/red, "Marksman" = /datum/outfit/ctf/marksman/red)
-	instagib_gear = /datum/outfit/ctf/red/instagib
+	instagib_gear = list("Instagib" = /datum/outfit/ctf/red/instagib)
 
 /obj/machinery/capture_the_flag/blue
 	name = "Blue CTF Controller"
@@ -264,7 +315,7 @@
 	team = BLUE_TEAM
 	team_span = "blueteamradio"
 	ctf_gear = list("Rifleman" = /datum/outfit/ctf/blue, "Assaulter" = /datum/outfit/ctf/assault/blue, "Marksman" = /datum/outfit/ctf/marksman/blue)
-	instagib_gear = /datum/outfit/ctf/blue/instagib
+	instagib_gear = list("Instagib" = /datum/outfit/ctf/blue/instagib)
 
 /obj/machinery/capture_the_flag/green
 	name = "Green CTF Controller"
@@ -272,7 +323,7 @@
 	team = GREEN_TEAM
 	team_span = "greenteamradio"
 	ctf_gear = list("Rifleman" = /datum/outfit/ctf/green, "Assaulter" = /datum/outfit/ctf/assault/green, "Marksman" = /datum/outfit/ctf/marksman/green)
-	instagib_gear = /datum/outfit/ctf/green/instagib
+	instagib_gear = list("Instagib" = /datum/outfit/ctf/green/instagib)
 
 /obj/machinery/capture_the_flag/yellow
 	name = "Yellow CTF Controller"
@@ -280,7 +331,7 @@
 	team = YELLOW_TEAM
 	team_span = "yellowteamradio"
 	ctf_gear = list("Rifleman" = /datum/outfit/ctf/yellow, "Assaulter" = /datum/outfit/ctf/assault/yellow, "Marksman" = /datum/outfit/ctf/marksman/yellow)
-	instagib_gear = /datum/outfit/ctf/yellow/instagib
+	instagib_gear = list("Instagib" = /datum/outfit/ctf/yellow/instagib)
 
 //ATTACK GHOST IGNORING PARENT RETURN VALUE
 /obj/machinery/capture_the_flag/attack_ghost(mob/user)
@@ -295,19 +346,11 @@
 		if(!(GLOB.ghost_role_flags & GHOSTROLE_MINIGAME))
 			to_chat(user, span_warning("CTF has been temporarily disabled by admins."))
 			return
-		for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+		for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 			if(CTF.game_id != game_id && CTF.ctf_enabled)
 				to_chat(user, span_warning("There is already an ongoing game in the [get_area(CTF)]!"))
 				return
-		people_who_want_to_play |= user.ckey
-		var/num = people_who_want_to_play.len
-		var/remaining = CTF_REQUIRED_PLAYERS - num
-		if(remaining <= 0)
-			people_who_want_to_play.Cut()
-			toggle_id_ctf(null, game_id)
-		else
-			to_chat(user, span_notice("CTF has been requested. [num]/[CTF_REQUIRED_PLAYERS] have readied up."))
-
+		get_ctf_voting_controller(game_id).vote(user)
 		return
 
 	if(!SSticker.HasRoundStarted())
@@ -322,7 +365,7 @@
 		spawn_team_member(new_team_member)
 		return
 
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(CTF.game_id != game_id || CTF == src || CTF.ctf_enabled == FALSE)
 			continue
 		if(user.ckey in CTF.team_members)
@@ -351,7 +394,7 @@
 
 	recently_dead_ckeys += body.ckey
 	spawned_mobs -= body
-	addtimer(CALLBACK(src, .proc/clear_cooldown, body.ckey), respawn_cooldown, TIMER_UNIQUE)
+	addtimer(CALLBACK(src, PROC_REF(clear_cooldown), body.ckey), respawn_cooldown, TIMER_UNIQUE)
 
 /obj/machinery/capture_the_flag/proc/clear_cooldown(ckey)
 	recently_dead_ckeys -= ckey
@@ -373,7 +416,7 @@
 			option.info = "<span class='boldnotice'>[initial(class.class_description)]</span>"
 			display_classes[key] = option
 
-		sortList(display_classes)
+		sort_list(display_classes)
 		var/choice = show_radial_menu(new_team_member.mob, src, display_classes, radius = 38)
 		if(!choice || !(GLOB.ghost_role_flags & GHOSTROLE_MINIGAME) || (new_team_member.ckey in recently_dead_ckeys) || !isobserver(new_team_member.mob) || src.ctf_enabled == FALSE || !(new_team_member.ckey in src.team_members))
 			return //picked nothing, admin disabled it, cheating to respawn faster, cheating to respawn... while in game?,
@@ -382,11 +425,12 @@
 
 	var/mob/living/carbon/human/M = new /mob/living/carbon/human(get_turf(src))
 	new_team_member.prefs.safe_transfer_prefs_to(M, is_antag = TRUE)
-	M.set_species(/datum/species/synth)
+	if(M.dna.species.outfit_important_for_life)
+		M.set_species(/datum/species/human)
 	M.key = new_team_member.key
 	M.faction += team
 	M.equipOutfit(chosen_class)
-	RegisterSignal(M, COMSIG_PARENT_QDELETING, .proc/ctf_qdelled_player) //just in case CTF has some map hazards (read: chasms). bit shorter than dust
+	RegisterSignal(M, COMSIG_PARENT_QDELETING, PROC_REF(ctf_qdelled_player)) //just in case CTF has some map hazards (read: chasms). bit shorter than dust
 	for(var/trait in player_traits)
 		ADD_TRAIT(M, trait, CAPTURE_THE_FLAG_TRAIT)
 	spawned_mobs[M] = chosen_class
@@ -421,18 +465,12 @@
 			for(var/obj/item/ctf/W in competitor)
 				competitor.dropItemToGround(W)
 			competitor.dust()
-	for(var/obj/machinery/control_point/control in GLOB.machines)
-		control.icon_state = "dominator"
-		control.controlling = null
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	control_point_reset()
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(CTF.game_id != game_id)
 			continue
 		if(CTF.ctf_enabled == TRUE)
-			CTF.points = 0
-			CTF.control_points = 0
-			CTF.ctf_enabled = FALSE
-			CTF.team_members = list()
-			CTF.arena_reset = FALSE
+			machine_reset(CTF)
 
 /obj/machinery/capture_the_flag/proc/toggle_ctf()
 	if(!ctf_enabled)
@@ -452,30 +490,28 @@
 
 	notify_ghosts("[name] has been activated!", source = src, action=NOTIFY_ORBIT, header = "CTF has been activated")
 
-	if(!arena_reset)
-		reset_the_arena()
-		arena_reset = TRUE
+/obj/machinery/capture_the_flag/proc/machine_reset(obj/machinery/capture_the_flag/CTF)
+	CTF.points = 0
+	CTF.control_points = 0
+	CTF.ctf_enabled = FALSE
+	CTF.team_members = list()
+	CTF.arena_reset = FALSE
 
-/obj/machinery/capture_the_flag/proc/reset_the_arena()
-	var/area/ctf_area = get_area(src)
-	var/static/list/ctf_object_typecache = typecacheof(list(
-				/obj/machinery,
-				/obj/effect/ctf,
-				/obj/item/ctf
-			))
-	for(var/atom/movable/area_movable in ctf_area)
-		if (ismob(area_movable))
-			continue
-		if(isstructure(area_movable))
-			var/obj/structure/ctf_structure = area_movable
-			ctf_structure.repair_damage(ctf_structure.max_integrity - ctf_structure.get_integrity())
-		else if(!is_type_in_typecache(area_movable, ctf_object_typecache))
-			qdel(area_movable)
+/obj/machinery/capture_the_flag/proc/control_point_reset()
+	for(var/obj/machinery/control_point/control in GLOB.machines)
+		control.icon_state = "dominator"
+		control.controlling = null
+
+/obj/machinery/capture_the_flag/proc/unload()
+	if(!ctf_landmark)
+		return
+
+	if(ctf_landmark == GLOB.ctf_spawner)
+		stop_ctf()
+		new /obj/effect/landmark/ctf(get_turf(GLOB.ctf_spawner))
 
 
 /obj/machinery/capture_the_flag/proc/stop_ctf()
-	ctf_enabled = FALSE
-	arena_reset = FALSE
 	var/area/A = get_area(src)
 	for(var/_competitor in GLOB.mob_living_list)
 		var/mob/living/competitor = _competitor
@@ -484,22 +520,22 @@
 	team_members.Cut()
 	spawned_mobs.Cut()
 	recently_dead_ckeys.Cut()
+	control_point_reset()
+	machine_reset(src)
 
 /obj/machinery/capture_the_flag/proc/instagib_mode()
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(CTF.game_id != game_id)
 			continue
-		if(CTF.ctf_enabled == TRUE)
-			CTF.ctf_gear = CTF.instagib_gear
-			CTF.respawn_cooldown = INSTAGIB_RESPAWN
+		CTF.ctf_gear = CTF.instagib_gear
+		CTF.respawn_cooldown = INSTAGIB_RESPAWN
 
 /obj/machinery/capture_the_flag/proc/normal_mode()
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(CTF.game_id != game_id)
 			continue
-		if(CTF.ctf_enabled == TRUE)
-			CTF.ctf_gear = initial(ctf_gear)
-			CTF.respawn_cooldown = DEFAULT_RESPAWN
+		CTF.ctf_gear = CTF.default_gear
+		CTF.respawn_cooldown = DEFAULT_RESPAWN
 
 /obj/structure/trap/ctf
 	name = "Spawn protection"
@@ -519,6 +555,7 @@
 		return
 	if(!(src.team in L.faction))
 		to_chat(L, span_danger("<B>Stay out of the enemy spawn!</B>"))
+		L.investigate_log("has died from entering the enemy spawn in CTF.", INVESTIGATE_DEATHS)
 		L.death()
 
 /obj/structure/trap/ctf/red
@@ -566,13 +603,13 @@
 
 /obj/effect/ctf/dead_barricade/Initialize(mapload)
 	. = ..()
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(CTF.game_id != game_id)
 			continue
 		CTF.dead_barricades += src
 
 /obj/effect/ctf/dead_barricade/Destroy()
-	for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+	for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 		if(CTF.game_id != game_id)
 			continue
 		CTF.dead_barricades -= src
@@ -593,8 +630,9 @@
 	resistance_flags = INDESTRUCTIBLE
 	var/obj/machinery/capture_the_flag/controlling
 	var/team = "none"
-	var/point_rate = 0.5
-	var/game_area = /area/ctf
+	///This is how many points are gained a second while controlling this point
+	var/point_rate = 1
+	var/game_area = /area/centcom/ctf
 
 /obj/machinery/control_point/process(delta_time)
 	if(controlling)
@@ -613,7 +651,7 @@
 
 /obj/machinery/control_point/proc/capture(mob/user)
 	if(do_after(user, 30, target = src))
-		for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+		for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 			if(CTF.ctf_enabled && (user.ckey in CTF.team_members))
 				controlling = CTF
 				icon_state = "dominator-[CTF.team]"
@@ -629,7 +667,7 @@
 		. = TRUE
 	if(ishuman(target))
 		var/mob/living/carbon/human/H = target
-		for(var/obj/machinery/capture_the_flag/CTF in GLOB.machines)
+		for(var/obj/machinery/capture_the_flag/CTF as anything in GLOB.ctf_panel.ctf_machines)
 			if(H in CTF.spawned_mobs)
 				. = TRUE
 				break
@@ -642,4 +680,3 @@
 #undef FLAG_RETURN_TIME
 #undef INSTAGIB_RESPAWN
 #undef DEFAULT_RESPAWN
-#undef CTF_REQUIRED_PLAYERS
